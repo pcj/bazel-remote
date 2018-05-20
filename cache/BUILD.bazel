@@ -4,6 +4,7 @@ go_library(
     name = "go_default_library",
     srcs = [
         "cache.go",
+        "fscache.go",
         "http.go",
         "lru.go",
     ],
@@ -15,7 +16,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
-        "cache_test.go",
+        "fscache_test.go",
         "http_test.go",
         "lru_test.go",
         "utils_test.go",
