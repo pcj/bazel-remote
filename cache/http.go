@@ -111,9 +111,11 @@ func (h *httpCache) CacheHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fromActionCache := expectedHash == ""
+
 	switch m := r.Method; m {
 	case http.MethodGet:
-		found, err := h.cache.Get(cacheKey, w)
+		found, err := h.cache.Get(cacheKey, fromActionCache, w)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			h.errorLogger.Printf("GET %s: %s", cacheKey, err)
@@ -144,7 +146,7 @@ func (h *httpCache) CacheHandler(w http.ResponseWriter, r *http.Request) {
 
 		logResponse(http.StatusOK)
 	case http.MethodHead:
-		ok, err := h.cache.Contains(cacheKey)
+		ok, err := h.cache.Contains(cacheKey, fromActionCache)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			h.errorLogger.Printf("HEAD %s: %s", cacheKey, err)

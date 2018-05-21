@@ -61,7 +61,7 @@ func TestCacheBasics(t *testing.T) {
 
 	// Non-existing item
 	rr := httptest.NewRecorder()
-	found, err := cache.Get(KEY, rr)
+	found, err := cache.Get(KEY, false, rr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestCacheBasics(t *testing.T) {
 
 	// Get the item back
 	rr = httptest.NewRecorder()
-	found, err = cache.Get(KEY, rr)
+	found, err = cache.Get(KEY, false, rr)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestCacheExistingFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	checkItems(t, cache, expectedSize, 3)
-	found, err := cache.Contains(items[0])
+	found, err := cache.Contains(items[0], false)
 	if err != nil {
 		t.Fatal(err)
 	}

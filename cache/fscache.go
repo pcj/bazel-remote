@@ -184,7 +184,7 @@ func (c *fsCache) Put(key string, size int64, expectedSha256 string, r io.Reader
 	return
 }
 
-func (c *fsCache) Get(key string, w http.ResponseWriter) (ok bool, err error) {
+func (c *fsCache) Get(key string, fromActionCache bool, w http.ResponseWriter) (ok bool, err error) {
 	ok = func() bool {
 		c.mux.Lock()
 		defer c.mux.Unlock()
@@ -219,7 +219,7 @@ func (c *fsCache) Get(key string, w http.ResponseWriter) (ok bool, err error) {
 	return
 }
 
-func (c *fsCache) Contains(key string) (ok bool, err error) {
+func (c *fsCache) Contains(key string, fromActionCache bool) (ok bool, err error) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
