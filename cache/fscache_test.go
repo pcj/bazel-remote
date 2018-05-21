@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,15 +56,14 @@ func TestCacheBasics(t *testing.T) {
 	defer os.RemoveAll(cacheDir)
 	cache := NewFsCache(cacheDir, 100)
 
-	checkItems(t, cache, 0, 0)
+	checkItems(t, cache.(*fsCache), 0, 0)
 
 	// Non-existing item
-	rr := httptest.NewRecorder()
-	found, err := cache.Get(KEY, false, rr)
+	data, sizeBytes, err := cache.Get(KEY, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found {
+	if data != nil {
 		t.Fatal("expected the item not to exist")
 	}
 
@@ -77,20 +75,27 @@ func TestCacheBasics(t *testing.T) {
 
 	// Dig into the internals to make sure that the cache state has been
 	// updated correctly
-	checkItems(t, cache, int64(len(CONTENTS)), 1)
+	checkItems(t, cache.(*fsCache), int64(len(CONTENTS)), 1)
 
 	// Get the item back
-	rr = httptest.NewRecorder()
-	found, err = cache.Get(KEY, false, rr)
+	data, sizeBytes, err = cache.Get(KEY, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !found {
+	if data == nil {
 		t.Fatal("expected the item to exist")
 	}
-	if bytes.Compare(rr.Body.Bytes(), []byte(CONTENTS)) != 0 {
+
+	dataBytes, err := ioutil.ReadAll(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(dataBytes, []byte(CONTENTS)) != 0 {
 		t.Fatalf("expected response '%s', but received '%s'",
-			rr.Body.Bytes(), CONTENTS)
+			dataBytes, CONTENTS)
+	}
+	if int64(len(dataBytes)) != sizeBytes {
+		t.Fatalf("Expected sizeBytes to be '%d' but was '%d'", len(dataBytes), sizeBytes)
 	}
 }
 
@@ -119,7 +124,7 @@ func TestCacheEviction(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		checkItems(t, cache, thisExp.expSize, thisExp.expNum)
+		checkItems(t, cache.(*fsCache), thisExp.expSize, thisExp.expNum)
 	}
 }
 
@@ -148,18 +153,15 @@ func TestCacheExistingFiles(t *testing.T) {
 	const expectedSize = 3 * int64(len(CONTENTS))
 	cache := NewFsCache(cacheDir, expectedSize)
 
-	checkItems(t, cache, expectedSize, 3)
+	checkItems(t, cache.(*fsCache), expectedSize, 3)
 
 	// Adding a new file should evict items[0] (the oldest)
 	err := cache.Put("a-key", int64(len(CONTENTS)), CONTENTS_HASH, strings.NewReader(CONTENTS))
 	if err != nil {
 		t.Fatal(err)
 	}
-	checkItems(t, cache, expectedSize, 3)
-	found, err := cache.Contains(items[0], false)
-	if err != nil {
-		t.Fatal(err)
-	}
+	checkItems(t, cache.(*fsCache), expectedSize, 3)
+	found := cache.Contains(items[0], false)
 	if found {
 		t.Fatalf("%s should have been evicted", items[0])
 	}

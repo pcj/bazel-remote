@@ -8,11 +8,9 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"sync"
 
 	"github.com/djherbis/atime"
@@ -31,7 +29,7 @@ func (i *lruItem) Size() int64 {
 
 // NewFsCache returns a new instance of a filesystem-based cache rooted at `dir`,
 // with a maximum size of `maxSizeBytes` bytes.
-func NewFsCache(dir string, maxSizeBytes int64) *fsCache {
+func NewFsCache(dir string, maxSizeBytes int64) Cache {
 	// Create the directory structure
 	ensureDirExists(filepath.Join(dir, "cas"))
 	ensureDirExists(filepath.Join(dir, "ac"))
@@ -184,18 +182,8 @@ func (c *fsCache) Put(key string, size int64, expectedSha256 string, r io.Reader
 	return
 }
 
-func (c *fsCache) Get(key string, fromActionCache bool, w http.ResponseWriter) (ok bool, err error) {
-	ok = func() bool {
-		c.mux.Lock()
-		defer c.mux.Unlock()
-
-		val, found := c.lru.Get(key)
-		// Uncommitted (i.e. uploading items) should be reported as not ok
-		return found && val.(*lruItem).committed
-	}()
-
-	if !ok {
-		w.WriteHeader(http.StatusNotFound)
+func (c *fsCache) Get(key string, fromActionCache bool) (data io.ReadCloser, sizeBytes int64, err error) {
+	if !c.Contains(key, fromActionCache) {
 		return
 	}
 
@@ -205,26 +193,23 @@ func (c *fsCache) Get(key string, fromActionCache bool, w http.ResponseWriter) (
 	if err != nil {
 		return
 	}
+	sizeBytes = fileInfo.Size()
 
-	f, err := os.Open(blobPath)
+	data, err = os.Open(blobPath)
 	if err != nil {
 		return
 	}
-	defer f.Close()
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.FormatInt(fileInfo.Size(), 10))
-
-	_, err = io.Copy(w, f)
 	return
 }
 
-func (c *fsCache) Contains(key string, fromActionCache bool) (ok bool, err error) {
+func (c *fsCache) Contains(key string, fromActionCache bool) (ok bool) {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 
 	val, found := c.lru.Get(key)
-	return found && val.(*lruItem).committed, nil
+	// Uncommitted (i.e. uploading items) should be reported as not ok
+	return found && val.(*lruItem).committed
 }
 
 func (c *fsCache) NumItems() int {

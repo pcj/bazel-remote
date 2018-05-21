@@ -4,11 +4,11 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 
 	auth "github.com/abbot/go-http-auth"
 	"github.com/buchgr/bazel-remote/cache"
-	"os"
 )
 
 func main() {
@@ -22,6 +22,7 @@ func main() {
 	tlsEnabled := flag.Bool("tls_enabled", false, "Bool specifying whether or not to start the server with tls.  If true, server_cert and server_key flags are requred.")
 	tlsCertFile := flag.String("tls_cert_file", "", "Path to a PEM encoded certificate file.  Required if tls_enabled is set to true.")
 	tlsKeyFile := flag.String("tls_key_file", "", "Path to a PEM encoded key file.  Required if tls_enabled is set to true.")
+	remoteHTTPCache := flag.String("remote_http_cache", "", "")
 
 	flag.Parse()
 
@@ -33,7 +34,14 @@ func main() {
 	log.SetFlags(log.Ldate | log.Ltime | log.LUTC | log.Lshortfile)
 	accessLogger := log.New(os.Stdout, "", log.Ldate|log.Ltime|log.LUTC)
 	errorLogger := log.New(os.Stderr, "", log.Ldate|log.Ltime|log.LUTC)
-	h := cache.NewHTTPCache(*dir, *maxSize*1024*1024*1024, accessLogger, errorLogger)
+
+	fsCache := cache.NewFsCache(*dir, *maxSize*1024*1024*1024)
+	cacheBackend := fsCache
+	if *remoteHTTPCache != "" {
+		cacheBackend = cache.NewRemoteHTTPCache(*remoteHTTPCache, fsCache, accessLogger,
+			errorLogger)
+	}
+	h := cache.NewHTTPCache(cacheBackend, accessLogger, errorLogger)
 
 	http.HandleFunc("/status", h.StatusPageHandler)
 	http.HandleFunc("/", maybeAuth(h.CacheHandler, *htpasswdFile, *host))

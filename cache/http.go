@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"time"
 )
 
@@ -44,8 +46,7 @@ type statusPageData struct {
 // accessLogger will print one line for each HTTP request to the cache.
 // errorLogger will print unexpected server errors. Inexistent files and malformed URLs will not
 // be reported.
-func NewHTTPCache(cacheDir string, maxBytes int64, accessLogger logger, errorLogger logger) HTTPCache {
-	cache := NewFsCache(cacheDir, maxBytes)
+func NewHTTPCache(cache Cache, accessLogger logger, errorLogger logger) HTTPCache {
 	errorLogger.Printf("Loaded %d existing cache items.", cache.NumItems())
 
 	hc := &httpCache{
@@ -115,17 +116,23 @@ func (h *httpCache) CacheHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch m := r.Method; m {
 	case http.MethodGet:
-		found, err := h.cache.Get(cacheKey, fromActionCache, w)
+		data, sizeBytes, err := h.cache.Get(cacheKey, fromActionCache)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			h.errorLogger.Printf("GET %s: %s", cacheKey, err)
 			return
 		}
 
-		if !found {
+		if data == nil {
+			http.Error(w, "Not found", http.StatusNotFound)
 			logResponse(http.StatusNotFound)
 			return
 		}
+		defer data.Close()
+
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.FormatInt(sizeBytes, 10))
+		io.Copy(w, data)
 
 		logResponse(http.StatusOK)
 	case http.MethodPut:
@@ -146,13 +153,7 @@ func (h *httpCache) CacheHandler(w http.ResponseWriter, r *http.Request) {
 
 		logResponse(http.StatusOK)
 	case http.MethodHead:
-		ok, err := h.cache.Contains(cacheKey, fromActionCache)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			h.errorLogger.Printf("HEAD %s: %s", cacheKey, err)
-			return
-		}
-
+		ok := h.cache.Contains(cacheKey, fromActionCache)
 		if !ok {
 			http.Error(w, "Not found", http.StatusNotFound)
 			logResponse(http.StatusNotFound)

@@ -7,10 +7,15 @@ go_library(
         "fscache.go",
         "http.go",
         "lru.go",
+        "remotehttpcache.go",
     ],
     importpath = "github.com/buchgr/bazel-remote/cache",
     visibility = ["//visibility:public"],
-    deps = ["@com_github_djherbis_atime//:go_default_library"],
+    deps = [
+        "//vendor/github.com/djherbis/atime:go_default_library",
+        "//vendor/golang.org/x/oauth2:go_default_library",
+        "//vendor/golang.org/x/oauth2/google:go_default_library",
+    ],
 )
 
 go_test(
