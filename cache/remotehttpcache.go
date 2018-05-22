@@ -2,7 +2,6 @@ package cache
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -30,6 +29,11 @@ func NewRemoteHTTPCache(baseURL string, local Cache, accessLogger logger, errorL
 	}
 }
 
+// Helper function for logging responses
+func logResponse(log logger, method string, code int, url string) {
+	log.Printf("%4s %d %15s %s", method, code, "", url)
+}
+
 func (r *remoteHTTPCache) Put(key string, size int64, expectedSha256 string, data io.Reader) (err error) {
 	fromActionCache := expectedSha256 == ""
 	if r.local.Contains(key, fromActionCache) {
@@ -43,22 +47,23 @@ func (r *remoteHTTPCache) Put(key string, size int64, expectedSha256 string, dat
 		return
 	}
 
+	if size == 0 {
+		// See https://github.com/golang/go/issues/20257#issuecomment-299509391
+		data = http.NoBody
+	}
 	url := requestURL(r.baseURL, key, fromActionCache)
 	req, err := http.NewRequest(http.MethodPut, url, data)
 	if err != nil {
 		return
 	}
-	req.ContentLength = size
 	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = size
 
 	rsp, err := r.remote.Do(req)
 	if err != nil {
 		return
 	}
-	if rsp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("PUT '%d' for '%s'", rsp.StatusCode, url)
-		return
-	}
+	logResponse(r.accessLogger, "PUT", rsp.StatusCode, url)
 	return
 }
 
@@ -74,12 +79,9 @@ func (r *remoteHTTPCache) Get(key string, fromActionCache bool) (data io.ReadClo
 	}
 	defer rsp.Body.Close()
 
-	r.accessLogger.Printf("GET %d '%s'", rsp.StatusCode, url)
+	logResponse(r.accessLogger, "GET", rsp.StatusCode, url)
 
-	if rsp.StatusCode == http.StatusNotFound {
-		return
-	} else if rsp.StatusCode != http.StatusOK {
-		err = fmt.Errorf("'%s' responded with status '%d'", url, rsp.StatusCode)
+	if rsp.StatusCode != http.StatusOK {
 		return
 	}
 
