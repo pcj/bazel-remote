@@ -229,3 +229,12 @@ func (c *fsCache) CurrentSize() int64 {
 	defer c.mux.Unlock()
 	return c.lru.CurrentSize()
 }
+
+func ensureDirExists(path string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err = os.MkdirAll(path, os.FileMode(0744))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}

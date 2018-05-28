@@ -4,10 +4,9 @@ go_library(
     name = "go_default_library",
     srcs = [
         "cache.go",
-        "fscache.go",
-        "http.go",
+        "disk.go",
+        "httpwritethrough.go",
         "lru.go",
-        "remotehttpcache.go",
     ],
     importpath = "github.com/buchgr/bazel-remote/cache",
     visibility = ["//visibility:public"],
@@ -17,10 +16,8 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = [
-        "fscache_test.go",
-        "http_test.go",
+        "disk_test.go",
         "lru_test.go",
-        "utils_test.go",
     ],
     embed = [":go_default_library"],
 )

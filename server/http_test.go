@@ -1,4 +1,4 @@
-package cache
+package server
 
 import (
 	"bytes"
@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+
+	"github.com/buchgr/bazel-remote/cache"
 )
 
 func TestDownloadFile(t *testing.T) {
@@ -24,7 +26,7 @@ func TestDownloadFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := NewFsCache(cacheDir, 1024)
+	c := cache.NewFsCache(cacheDir, 1024)
 	h := NewHTTPCache(c, newSilentLogger(), newSilentLogger())
 
 	req, err := http.NewRequest("GET", "/cas/"+hash, bytes.NewReader([]byte{}))
@@ -75,7 +77,7 @@ func TestUploadFilesConcurrently(t *testing.T) {
 		requests[i] = r
 	}
 
-	c := NewFsCache(cacheDir, 1000*1024)
+	c := cache.NewFsCache(cacheDir, 1000*1024)
 	h := NewHTTPCache(c, newSilentLogger(), newSilentLogger())
 	handler := http.HandlerFunc(h.CacheHandler)
 
@@ -131,7 +133,7 @@ func TestUploadSameFileConcurrently(t *testing.T) {
 
 	data, hash := randomDataAndHash(1024)
 
-	c := NewFsCache(cacheDir, 1024)
+	c := cache.NewFsCache(cacheDir, 1024)
 	h := NewHTTPCache(c, newSilentLogger(), newSilentLogger())
 	handler := http.HandlerFunc(h.CacheHandler)
 
@@ -176,7 +178,7 @@ func TestUploadCorruptedFile(t *testing.T) {
 		t.Error(err)
 	}
 
-	c := NewFsCache(cacheDir, 2048)
+	c := cache.NewFsCache(cacheDir, 2048)
 	h := NewHTTPCache(c, newSilentLogger(), newSilentLogger())
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(h.CacheHandler)
@@ -214,7 +216,7 @@ func TestStatusPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := NewFsCache(cacheDir, 2048)
+	c := cache.NewFsCache(cacheDir, 2048)
 	h := NewHTTPCache(c, newSilentLogger(), newSilentLogger())
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(h.StatusPageHandler)

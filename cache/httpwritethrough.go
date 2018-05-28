@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-const numUploaders = 2
-const maxQueuedUploads = 1000000
+const numUploaders = 100
+const maxQueuedUploads = 10000
 
 type uploadReq struct {
 	key string
@@ -22,12 +22,12 @@ type remoteHTTPCache struct {
 	baseURL      string
 	local        Cache
 	uploadQueue  chan<- (*uploadReq)
-	accessLogger logger
-	errorLogger  logger
+	accessLogger Logger
+	errorLogger  Logger
 }
 
-func uploadFile(remote *http.Client, baseURL string, local Cache, accessLogger logger,
-	errorLogger logger, key string, ac bool) {
+func uploadFile(remote *http.Client, baseURL string, local Cache, accessLogger Logger,
+	errorLogger Logger, key string, ac bool) {
 	data, size, err := local.Get(key, ac)
 	if err != nil {
 		return
@@ -54,12 +54,12 @@ func uploadFile(remote *http.Client, baseURL string, local Cache, accessLogger l
 }
 
 // NewRemoteHTTPCache ...
-func NewRemoteHTTPCache(baseURL string, local Cache, remote *http.Client, accessLogger logger,
-	errorLogger logger) Cache {
+func NewRemoteHTTPCache(baseURL string, local Cache, remote *http.Client, accessLogger Logger,
+	errorLogger Logger) Cache {
 	uploadQueue := make(chan *uploadReq, maxQueuedUploads)
 	for uploader := 0; uploader < numUploaders; uploader++ {
-		go func(remote *http.Client, baseURL string, local Cache, accessLogger logger,
-			errorLogger logger) {
+		go func(remote *http.Client, baseURL string, local Cache, accessLogger Logger,
+			errorLogger Logger) {
 			for item := range uploadQueue {
 				uploadFile(remote, baseURL, local, accessLogger, errorLogger, item.key, item.ac)
 			}
@@ -76,7 +76,7 @@ func NewRemoteHTTPCache(baseURL string, local Cache, remote *http.Client, access
 }
 
 // Helper function for logging responses
-func logResponse(log logger, method string, code int, url string) {
+func logResponse(log Logger, method string, code int, url string) {
 	log.Printf("%4s %d %15s %s", method, code, "", url)
 }
 

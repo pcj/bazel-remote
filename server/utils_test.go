@@ -1,4 +1,4 @@
-package cache
+package server
 
 import (
 	"crypto/rand"
@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"io/ioutil"
 	"log"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -40,4 +41,13 @@ func createTmpCacheDirs(t *testing.T) string {
 // for tests.
 func newSilentLogger() *log.Logger {
 	return log.New(ioutil.Discard, "", 0)
+}
+
+func ensureDirExists(path string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err = os.MkdirAll(path, os.FileMode(0744))
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
 }

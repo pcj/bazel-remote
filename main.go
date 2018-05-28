@@ -9,6 +9,7 @@ import (
 
 	auth "github.com/abbot/go-http-auth"
 	"github.com/buchgr/bazel-remote/cache"
+	"github.com/buchgr/bazel-remote/server"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
@@ -48,7 +49,7 @@ func main() {
 		cacheBackend = cache.NewRemoteHTTPCache(*remoteHTTPCache, fsCache, remoteClient,
 			accessLogger, errorLogger)
 	}
-	h := cache.NewHTTPCache(cacheBackend, accessLogger, errorLogger)
+	h := server.NewHTTPCache(cacheBackend, accessLogger, errorLogger)
 
 	http.HandleFunc("/status", h.StatusPageHandler)
 	http.HandleFunc("/", maybeAuth(h.CacheHandler, *htpasswdFile, *host))

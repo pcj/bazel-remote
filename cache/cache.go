@@ -4,6 +4,11 @@ import (
 	"io"
 )
 
+// Logger is designed to be satisfied by log.Logger
+type Logger interface {
+	Printf(format string, v ...interface{})
+}
+
 // ErrTooBig is returned by Cache::Put when when the item size is bigger than the
 // cache size limit.
 type ErrTooBig struct{}
