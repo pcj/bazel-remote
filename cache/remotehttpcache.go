@@ -9,21 +9,67 @@ import (
 	"strings"
 )
 
+const numUploaders = 2
+const maxQueuedUploads = 1000000
+
+type uploadReq struct {
+	key string
+	ac  bool
+}
+
 type remoteHTTPCache struct {
 	remote       *http.Client
 	baseURL      string
 	local        Cache
+	uploadQueue  chan<- (*uploadReq)
 	accessLogger logger
 	errorLogger  logger
 }
 
+func uploadFile(remote *http.Client, baseURL string, local Cache, accessLogger logger,
+	errorLogger logger, key string, ac bool) {
+	data, size, err := local.Get(key, ac)
+	if err != nil {
+		return
+	}
+
+	if size == 0 {
+		// See https://github.com/golang/go/issues/20257#issuecomment-299509391
+		data = http.NoBody
+	}
+	url := requestURL(baseURL, key, ac)
+	req, err := http.NewRequest(http.MethodPut, url, data)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.ContentLength = size
+
+	rsp, err := remote.Do(req)
+	if err != nil {
+		return
+	}
+	logResponse(accessLogger, "PUT", rsp.StatusCode, url)
+	return
+}
+
 // NewRemoteHTTPCache ...
-func NewRemoteHTTPCache(baseURL string, local Cache, accessLogger logger, errorLogger logger) Cache {
-	//remote, _ := google.DefaultClient(oauth2.NoContext, "https://www.googleapis.com/auth/cloud-platform")
+func NewRemoteHTTPCache(baseURL string, local Cache, remote *http.Client, accessLogger logger,
+	errorLogger logger) Cache {
+	uploadQueue := make(chan *uploadReq, maxQueuedUploads)
+	for uploader := 0; uploader < numUploaders; uploader++ {
+		go func(remote *http.Client, baseURL string, local Cache, accessLogger logger,
+			errorLogger logger) {
+			for item := range uploadQueue {
+				uploadFile(remote, baseURL, local, accessLogger, errorLogger, item.key, item.ac)
+			}
+		}(remote, baseURL, local, accessLogger, errorLogger)
+	}
 	return &remoteHTTPCache{
-		remote:       http.DefaultClient,
+		remote:       remote,
 		baseURL:      baseURL,
 		local:        local,
+		uploadQueue:  uploadQueue,
 		accessLogger: accessLogger,
 		errorLogger:  errorLogger,
 	}
@@ -42,28 +88,14 @@ func (r *remoteHTTPCache) Put(key string, size int64, expectedSha256 string, dat
 	}
 	r.local.Put(key, size, expectedSha256, data)
 
-	data, size, err = r.local.Get(key, fromActionCache)
-	if err != nil {
-		return
+	select {
+	case r.uploadQueue <- &uploadReq{
+		key: key,
+		ac:  fromActionCache,
+	}:
+	default:
+		r.errorLogger.Printf("too many uploads queued")
 	}
-
-	if size == 0 {
-		// See https://github.com/golang/go/issues/20257#issuecomment-299509391
-		data = http.NoBody
-	}
-	url := requestURL(r.baseURL, key, fromActionCache)
-	req, err := http.NewRequest(http.MethodPut, url, data)
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/octet-stream")
-	req.ContentLength = size
-
-	rsp, err := r.remote.Do(req)
-	if err != nil {
-		return
-	}
-	logResponse(r.accessLogger, "PUT", rsp.StatusCode, url)
 	return
 }
 

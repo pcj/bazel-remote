@@ -9,6 +9,8 @@ import (
 
 	auth "github.com/abbot/go-http-auth"
 	"github.com/buchgr/bazel-remote/cache"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 func main() {
@@ -38,8 +40,13 @@ func main() {
 	fsCache := cache.NewFsCache(*dir, *maxSize*1024*1024*1024)
 	cacheBackend := fsCache
 	if *remoteHTTPCache != "" {
-		cacheBackend = cache.NewRemoteHTTPCache(*remoteHTTPCache, fsCache, accessLogger,
-			errorLogger)
+		remoteClient, err := google.DefaultClient(oauth2.NoContext,
+			"https://www.googleapis.com/auth/cloud-platform")
+		if err != nil {
+			log.Fatal(err)
+		}
+		cacheBackend = cache.NewRemoteHTTPCache(*remoteHTTPCache, fsCache, remoteClient,
+			accessLogger, errorLogger)
 	}
 	h := cache.NewHTTPCache(cacheBackend, accessLogger, errorLogger)
 
