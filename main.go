@@ -230,10 +230,10 @@ func main() {
 			return nil
 		}
 
-		adjustRlimit()
-
 		accessLogger := log.New(os.Stdout, "", logFlags)
 		errorLogger := log.New(os.Stderr, "", logFlags)
+
+		adjustRlimit(errorLogger)
 
 		var proxyCache cache.CacheProxy
 		if c.GoogleCloudStorage != nil {
@@ -253,10 +253,16 @@ func main() {
 			proxyCache = cachehttp.New(baseURL,
 				httpClient, accessLogger, errorLogger)
 		} else if c.S3CloudStorage != nil {
-			proxyCache = s3.New(c.S3CloudStorage, accessLogger, errorLogger)
+			proxyCache, err = s3.New(c.S3CloudStorage, accessLogger, errorLogger)
+			if err != nil {
+				log.Fatal(err)
+			}
 		}
 
-		diskCache := disk.New(c.Dir, int64(c.MaxSize)*1024*1024*1024, proxyCache)
+		diskCache, err := disk.New(errorLogger, c.Dir, int64(c.MaxSize)*1024*1024*1024, proxyCache)
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		mux := http.NewServeMux()
 		httpServer := &http.Server{

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/buchgr/bazel-remote/cache"
 	"github.com/buchgr/bazel-remote/config"
@@ -25,6 +24,7 @@ type uploadReq struct {
 }
 
 type s3Cache struct {
+	logger       cache.Logger
 	mcore        *minio.Core
 	prefix       string
 	bucket       string
@@ -49,9 +49,9 @@ var errNotFound = errors.New("NOT FOUND")
 
 // New returns a new instance of the S3-API based cache
 func New(s3Config *config.S3CloudStorageConfig, accessLogger cache.Logger,
-	errorLogger cache.Logger) cache.CacheProxy {
+	errorLogger cache.Logger) (cache.CacheProxy, error) {
 
-	fmt.Println("Using S3 backend.")
+	errorLogger.Printf("Using S3 backend.")
 
 	var minioCore *minio.Core
 	var err error
@@ -67,7 +67,7 @@ func New(s3Config *config.S3CloudStorageConfig, accessLogger cache.Logger,
 		)
 
 		if err != nil {
-			log.Fatalln(err)
+			return nil, err
 		}
 
 		minioCore = &minio.Core{
@@ -83,7 +83,7 @@ func New(s3Config *config.S3CloudStorageConfig, accessLogger cache.Logger,
 		)
 
 		if err != nil {
-			log.Fatalln(err)
+			return nil, err
 		}
 	}
 
@@ -105,7 +105,7 @@ func New(s3Config *config.S3CloudStorageConfig, accessLogger cache.Logger,
 		}()
 	}
 
-	return c
+	return c, nil
 }
 
 func (c *s3Cache) objectKey(hash string, kind cache.EntryKind) string {
@@ -113,13 +113,13 @@ func (c *s3Cache) objectKey(hash string, kind cache.EntryKind) string {
 }
 
 // Helper function for logging responses
-func logResponse(log cache.Logger, method, bucket, key string, err error) {
+func (c *s3Cache) logResponse(log cache.Logger, method, bucket, key string, err error) {
 	status := "OK"
 	if err != nil {
 		status = err.Error()
 	}
 
-	log.Printf("S3 %s %s %s %s", method, bucket, key, status)
+	c.accessLogger.Printf("S3 %s %s %s %s", method, bucket, key, status)
 }
 
 func (c *s3Cache) uploadFile(item uploadReq) {
@@ -141,7 +141,7 @@ func (c *s3Cache) uploadFile(item uploadReq) {
 		nil, // sse
 	)
 
-	logResponse(c.accessLogger, "UPLOAD", c.bucket, c.objectKey(item.hash, item.kind), err)
+	c.logResponse(c.accessLogger, "UPLOAD", c.bucket, c.objectKey(item.hash, item.kind), err)
 }
 
 func (c *s3Cache) Put(kind cache.EntryKind, hash string, size int64, rdr io.Reader) {
@@ -167,16 +167,16 @@ func (c *s3Cache) Get(kind cache.EntryKind, hash string) (io.ReadCloser, int64, 
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
 			cacheMisses.Inc()
-			logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), errNotFound)
+			c.logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), errNotFound)
 			return nil, -1, nil
 		}
 		cacheMisses.Inc()
-		logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), err)
+		c.logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), err)
 		return nil, -1, err
 	}
 	cacheHits.Inc()
 
-	logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), nil)
+	c.logResponse(c.accessLogger, "DOWNLOAD", c.bucket, c.objectKey(hash, kind), nil)
 
 	return object, info.Size, nil
 }
@@ -197,7 +197,7 @@ func (c *s3Cache) Contains(kind cache.EntryKind, hash string) (bool, int64) {
 		size = s.Size
 	}
 
-	logResponse(c.accessLogger, "CONTAINS", c.bucket, c.objectKey(hash, kind), err)
+	c.logResponse(c.accessLogger, "CONTAINS", c.bucket, c.objectKey(hash, kind), err)
 
 	return exists, size
 }

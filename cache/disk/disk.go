@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,8 +45,9 @@ func (i *lruItem) Size() int64 {
 
 // DiskCache is filesystem-based cache, with an optional backend proxy.
 type DiskCache struct {
-	dir   string
-	proxy cache.CacheProxy
+	logger cache.Logger
+	dir    string
+	proxy  cache.CacheProxy
 
 	mu  *sync.Mutex
 	lru SizedLRU
@@ -63,7 +63,7 @@ const sha256HashStrSize = sha256.Size * 2 // Two hex characters per byte.
 // New returns a new instance of a filesystem-based cache rooted at `dir`,
 // with a maximum size of `maxSizeBytes` bytes and an optional backend `proxy`.
 // DiskCache is safe for concurrent use.
-func New(dir string, maxSizeBytes int64, proxy cache.CacheProxy) *DiskCache {
+func New(logger cache.Logger, dir string, maxSizeBytes int64, proxy cache.CacheProxy) (*DiskCache, error) {
 	// Create the directory structure.
 	hexLetters := []byte("0123456789abcdef")
 	for _, c1 := range hexLetters {
@@ -71,15 +71,15 @@ func New(dir string, maxSizeBytes int64, proxy cache.CacheProxy) *DiskCache {
 			subDir := string(c1) + string(c2)
 			err := os.MkdirAll(filepath.Join(dir, cache.CAS.String(), subDir), os.ModePerm)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 			err = os.MkdirAll(filepath.Join(dir, cache.AC.String(), subDir), os.ModePerm)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 			err = os.MkdirAll(filepath.Join(dir, cache.RAW.String(), subDir), os.ModePerm)
 			if err != nil {
-				log.Fatal(err)
+				return nil, err
 			}
 		}
 	}
@@ -95,7 +95,7 @@ func New(dir string, maxSizeBytes int64, proxy cache.CacheProxy) *DiskCache {
 			// Common case. Just remove the cache file and we're done.
 			err := os.Remove(f)
 			if err != nil {
-				log.Printf("ERROR: failed to remove evicted cache file: %s", f)
+				logger.Printf("ERROR: failed to remove evicted cache file: %s", f)
 			}
 
 			return
@@ -133,43 +133,44 @@ func New(dir string, maxSizeBytes int64, proxy cache.CacheProxy) *DiskCache {
 		// We expect to have removed at least one file at this point.
 		if removedCount == 0 {
 			if !os.IsNotExist(tfErr) {
-				log.Printf("ERROR: failed to remove evicted item: %s / %v",
+				logger.Printf("ERROR: failed to remove evicted item: %s / %v",
 					tf, tfErr)
 			}
 
 			if !os.IsNotExist(fErr) {
-				log.Printf("ERROR: failed to remove evicted item: %s / %v",
+				logger.Printf("ERROR: failed to remove evicted item: %s / %v",
 					f, fErr)
 			}
 		}
 	}
 
 	c := &DiskCache{
-		dir:   filepath.Clean(dir),
-		proxy: proxy,
-		mu:    &sync.Mutex{},
-		lru:   NewSizedLRU(maxSizeBytes, onEvict),
+		logger: logger,
+		dir:    filepath.Clean(dir),
+		proxy:  proxy,
+		mu:     &sync.Mutex{},
+		lru:    NewSizedLRU(maxSizeBytes, onEvict),
 	}
 
 	err := c.migrateDirectories()
 	if err != nil {
-		log.Fatalf("Attempting to migrate the old directory structure to the new structure failed "+
+		return nil, fmt.Errorf("Attempting to migrate the old directory structure to the new structure failed "+
 			"with error: %v", err)
 	}
 	err = c.loadExistingFiles()
 	if err != nil {
-		log.Fatalf("Loading of existing cache entries failed due to error: %v", err)
+		return nil, fmt.Errorf("Loading of existing cache entries failed due to error: %v", err)
 	}
 
-	return c
+	return c, nil
 }
 
 func (c *DiskCache) migrateDirectories() error {
-	err := migrateDirectory(filepath.Join(c.dir, cache.AC.String()))
+	err := c.migrateDirectory(filepath.Join(c.dir, cache.AC.String()))
 	if err != nil {
 		return err
 	}
-	err = migrateDirectory(filepath.Join(c.dir, cache.CAS.String()))
+	err = c.migrateDirectory(filepath.Join(c.dir, cache.CAS.String()))
 	if err != nil {
 		return err
 	}
@@ -177,11 +178,11 @@ func (c *DiskCache) migrateDirectories() error {
 	return nil
 }
 
-func migrateDirectory(dir string) error {
-	log.Printf("Migrating files (if any) to new directory structure: %s\n", dir)
+func (c *DiskCache) migrateDirectory(dir string) error {
+	c.logger.Printf("Migrating files (if any) to new directory structure: %s\n", dir)
 	return filepath.Walk(dir, func(name string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Println("Error while walking directory:", err)
+			c.logger.Printf("Error while walking directory: %v", err)
 			return err
 		}
 
@@ -201,13 +202,13 @@ func migrateDirectory(dir string) error {
 // LRU index so that they can be served. Files are sorted by access time first,
 // so that the eviction behavior is preserved across server restarts.
 func (c *DiskCache) loadExistingFiles() error {
-	log.Printf("Loading existing files in %s.\n", c.dir)
+	c.logger.Printf("Loading existing files in %s.", c.dir)
 
 	// Walk the directory tree
 	var files []nameAndInfo
 	err := filepath.Walk(c.dir, func(name string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Println("Error while walking directory:", err)
+			c.logger.Printf("Error while walking directory: %v", err)
 			return err
 		}
 
@@ -220,13 +221,13 @@ func (c *DiskCache) loadExistingFiles() error {
 		return err
 	}
 
-	log.Println("Sorting cache files by atime.")
+	c.logger.Printf("Sorting cache files by atime.")
 	// Sort in increasing order of atime
 	sort.Slice(files, func(i int, j int) bool {
 		return atime.Get(files[i].info).Before(atime.Get(files[j].info))
 	})
 
-	log.Println("Building LRU index.")
+	c.logger.Printf("Building LRU index.")
 	for _, f := range files {
 		relPath := f.name[len(c.dir)+1:]
 		ok := c.lru.Add(relPath, &lruItem{
@@ -241,7 +242,7 @@ func (c *DiskCache) loadExistingFiles() error {
 		}
 	}
 
-	log.Println("Finished loading disk cache files.")
+	c.logger.Printf("Finished loading disk cache files.")
 	return nil
 }
 
@@ -574,15 +575,6 @@ func (c *DiskCache) Stats() (currentSize int64, numItems int) {
 	defer c.mu.Unlock()
 
 	return c.lru.CurrentSize(), c.lru.Len()
-}
-
-func ensureDirExists(path string) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		err = os.MkdirAll(path, os.ModePerm)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
 }
 
 func cacheKey(kind cache.EntryKind, hash string) string {

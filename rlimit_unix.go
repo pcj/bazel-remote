@@ -4,30 +4,31 @@
 package main
 
 import (
-	"log"
 	"syscall"
+
+	"github.com/buchgr/bazel-remote/cache"
 )
 
 // Raise the limit on the number of open files.
-func adjustRlimit() {
+func adjustRlimit(logger cache.Logger) {
 	var limits syscall.Rlimit
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limits)
 	if err != nil {
-		log.Println("Failed to find rlimit from getrlimit:", err)
+		logger.Printf("Failed to find rlimit from getrlimit: %v", err)
 		return
 	}
 
-	log.Printf("Initial RLIMIT_NOFILE cur: %d max: %d",
+	logger.Printf("Initial RLIMIT_NOFILE cur: %d max: %d",
 		limits.Cur, limits.Max)
 
 	limits.Cur = limits.Max
 
-	log.Printf("Setting RLIMIT_NOFILE cur: %d max: %d",
+	logger.Printf("Setting RLIMIT_NOFILE cur: %d max: %d",
 		limits.Cur, limits.Max)
 
 	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &limits)
 	if err != nil {
-		log.Println("Failed to set rlimit:", err)
+		logger.Printf("Failed to set rlimit: %v", err)
 		return
 	}
 

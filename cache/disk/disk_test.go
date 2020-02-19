@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,7 +20,7 @@ import (
 
 	"github.com/buchgr/bazel-remote/cache"
 	cachehttp "github.com/buchgr/bazel-remote/cache/http"
-	"github.com/buchgr/bazel-remote/utils"
+	testutils "github.com/buchgr/bazel-remote/utils"
 )
 
 func tempDir(t *testing.T) string {
@@ -632,5 +633,14 @@ func TestHttpProxyBackend(t *testing.T) {
 
 	if bytes.Compare(retrievedData, blob) != 0 {
 		t.Fatalf("Expected '%v' but received '%v", retrievedData, blob)
+	}
+}
+
+func ensureDirExists(path string) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		err = os.MkdirAll(path, os.ModePerm)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 }

@@ -3,15 +3,16 @@
 package main
 
 import (
-	"log"
 	"os/exec"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/buchgr/bazel-remote/cache"
 )
 
 // Raise the limit on the number of open files.
-func adjustRlimit() {
+func adjustRlimit(logger cache.Logger) {
 	// Go 1.12 onwards uses getrlimit, which on macos does not return the
 	// correct hard limit for RLIM_NOFILE. We need to use the minimum of
 	// the max from getrlimit and the value from sysctl.
@@ -20,7 +21,7 @@ func adjustRlimit() {
 	var limits syscall.Rlimit
 	err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &limits)
 	if err != nil {
-		log.Println("Failed to find rlimit from getrlimit:", err)
+		logger.Printf("Failed to find rlimit from getrlimit: %v", err)
 		return
 	}
 
@@ -28,14 +29,14 @@ func adjustRlimit() {
 	cmd := exec.Command("/usr/sbin/sysctl", "-n", "kern.maxfilesperproc")
 	stdout, err := cmd.Output()
 	if err != nil {
-		log.Println("Failed to find rlimit from sysctl:", err)
+		logger.Printf("Failed to find rlimit from sysctl: %v", err)
 		return
 	}
 
 	val := strings.Trim(string(stdout), "\n")
 	sysctlMax, err := strconv.ParseUint(val, 10, 64)
 	if err != nil {
-		log.Println("Failed to parse rlimit from sysctl:", err)
+		logger.Printf("Failed to parse rlimit from sysctl: %v", err)
 		return
 	}
 
@@ -43,17 +44,17 @@ func adjustRlimit() {
 		limits.Max = sysctlMax
 	}
 
-	log.Printf("Initial RLIMIT_NOFILE cur: %d max: %d",
+	logger.Printf("Initial RLIMIT_NOFILE cur: %d max: %d",
 		limits.Cur, limits.Max)
 
 	limits.Cur = limits.Max
 
-	log.Printf("Setting RLIMIT_NOFILE cur: %d max: %d",
+	logger.Printf("Setting RLIMIT_NOFILE cur: %d max: %d",
 		limits.Cur, limits.Max)
 
 	err = syscall.Setrlimit(syscall.RLIMIT_NOFILE, &limits)
 	if err != nil {
-		log.Println("Failed to set rlimit:", err)
+		logger.Printf("Failed to set rlimit: %v", err)
 		return
 	}
 
